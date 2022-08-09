@@ -9,7 +9,7 @@ use env_logger::Env;
 use std::{env, io};
 
 use database::db::get_pool;
-use web_server::{auth::endpoints::auth_endpoints, endpoints::graphql_endpoints};
+use web_server::{auth::endpoints::auth_endpoints, graphql::endpoints::graphql_endpoints};
 
 fn init_env_and_logging() {
     dotenv::dotenv().ok();
