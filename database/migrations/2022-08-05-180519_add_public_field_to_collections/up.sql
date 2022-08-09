@@ -1,0 +1,4 @@
+-- Your SQL goes here
+
+ALTER TABLE collections
+ADD COLUMN public BOOLEAN NOT NULL DEFAULT FALSE;

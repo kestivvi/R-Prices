@@ -1,0 +1,26 @@
+# Use root/example as user/password credentials
+version: '3.1'
+
+services:
+
+  db:
+    image: postgres:14.4-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: db
+    ports:
+      - 5432:5432
+
+  webdriver:
+    image: selenium/standalone-chrome
+    restart: always
+    shm_size: 512m
+    environment:
+      - SE_NODE_SESSION_TIMEOUT=20
+      - SE_NODE_OVERRIDE_MAX_SESSIONS=true
+      - SE_NODE_MAX_SESSIONS=1
+      - SE_START_XVFB=true
+    ports:
+      - 4444:4444

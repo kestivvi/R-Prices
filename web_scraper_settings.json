@@ -1,0 +1,37 @@
+{
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36",
+    "database_url": "postgres://user:password@localhost:5432/db",
+    "run_in_loop": true,
+    "interval": 3600,
+    "reqwest_selectors": {
+        "x-kom.pl/p": ".n4n86h-4",
+        "morele.net": ".product-price",
+        "komputronik.pl/product/": ".price",
+        "al.to/p": ".n4n86h-4",
+        "proshop.pl": ".site-currency-attention",
+        "net-s.pl/produkt": ".current-price",
+        "drukson.pl": ".product-price .price",
+        "apollo.pl/produkt": ".js-cena",
+        "empik.com": ".productPriceInfo__price",
+        "tech-town.pl": ".current-price",
+        "pcprojekt.pl": "#our_price_display",
+        "digiram.pl": ".product-price > span:nth-of-type(2)",
+        "zadowolenie.pl": ".m-priceBox_price",
+        "apolos.pl/produkt": ".product_price",
+        "sferis.pl": ".toz",
+        "fatpc.pl": ".main-price",
+        "esus-it.pl": ".projector_price_subwrapper > .projector_price_value:nth-of-type(2)",
+        "buy-it.com.pl": ".current-price",
+        "hanzo.com.pl/pl/p": ".main-price",
+        "bizserver.eu/pl": "#our_price_display",
+        "itnes.pl": "#our_price_display",
+        "hardware24.pl": ".current-price > span:nth-of-type(2)",
+        "buy-it.pl": ".current-price"
+    },
+    "fantoccini_selectors": {
+        "allegro.pl/oferta": "._7030e_5GTr2",
+        "oleole.pl": ".selenium-price-normal",
+        "euro.com.pl": ".selenium-price-normal",
+        "mediaexpert.pl": ".main-price .whole"
+    }
+}

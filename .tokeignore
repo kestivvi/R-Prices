@@ -1,0 +1,14 @@
+.*
+00000000000000_diesel_initial_setup/*
+dumps
+target
+Cargo.lock
+*.example
+api
+Makefile
+Procfile
+README.md
+rust-toolchain
+RustConfig
+rustfmt.toml
+dump*
