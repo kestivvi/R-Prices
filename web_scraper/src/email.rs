@@ -33,7 +33,6 @@ pub fn email_many(
         new_price.availability.to_string()
     };
 
-    log::debug!("Creating singlepart body");
     let single_part = include_str!("email.html")
         .replace("[WHAT_HAS_CHANGED]", what_has_changed)
         .replace("[PRODUCT]", name)
@@ -51,28 +50,24 @@ pub fn email_many(
 
     let single_part = SinglePart::html(single_part);
 
-    log::debug!("Creating subject");
     let subject = format!(
         "R Prices - {} - Then: {}, Now: {}",
-        crop_string(name, 15),
+        crop_string(name, 25),
         previous_state,
         current_state
     );
 
-    log::debug!("Creating creds");
     let creds = Credentials::new(
         "kestivvi@gmail.com".to_string(),
         "wvldufqhmdxogmej".to_string(),
     );
 
-    log::info!("Opeing connection to email server and logging in...");
     let mailer = SmtpTransport::relay("smtp.gmail.com")
         .unwrap()
         .credentials(creds)
         .build();
 
     for user_email in user_emails {
-        log::debug!("Creating email");
         let email = Message::builder()
             .from("kestivvi <kestivvi@gmail.com>".parse().unwrap())
             .to(user_email.parse().unwrap())
@@ -80,11 +75,9 @@ pub fn email_many(
             .singlepart(single_part.clone())
             .unwrap();
 
-        log::info!("Sending mail...");
-
         match mailer.send(&email) {
-            Ok(_) => log::info!("Email sent successfully!"),
-            Err(e) => log::error!("Could not send email: {:?}", e),
+            Ok(_) => log::info!("Email sent successfully! {}", subject),
+            Err(e) => log::error!("Could not send email:\nEmail: {:?}\nError: {:?}", email, e),
         }
     }
 }

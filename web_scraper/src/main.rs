@@ -56,7 +56,7 @@ async fn run() {
 ///////////////////////////////////////////////////////////////////////////////
 // Main
 
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main()]
 async fn main() {
     info!("Initializing environment variables and logging!");
     init_env_and_logging();

@@ -3,8 +3,11 @@ use database::models::price::{Availability, CreatePriceInput, Price};
 use database::models::product::Product;
 use diesel::PgConnection;
 use email::email_many;
-use log::{debug, error};
+use log::{debug, error, info};
 use price_scraper::{GetPriceError, PriceScraper};
+use std::cell::RefCell;
+use std::fmt::{write, Display};
+use std::rc::Rc;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Modules Declaration
@@ -16,25 +19,50 @@ pub mod price_scraper;
 ///////////////////////////////////////////////////////////////////////////////
 // Structures
 
-// #[derive(Default)]
-// struct Stats {
-//     pub all: u64,
-//     pub success: u64,
-//     pub price_not_found: u64,
-//     pub redirected: u64,
-//     pub other_error: u64,
-//     pub page_not_supported: u64,
-// }
+#[derive(Default)]
+struct Stats {
+    pub all: u64,
+    pub success: u64,
+    pub price_not_found: u64,
+    pub redirected: u64,
+    pub other_error: u64,
+    pub page_not_supported: u64,
+}
 
-// impl Stats {
-//     fn done(&self) -> u64 {
-//         &self.success
-//             + &self.price_not_found
-//             + &self.redirected
-//             + &self.other_error
-//             + &self.page_not_supported
-//     }
-// }
+impl Stats {
+    fn done(&self) -> u64 {
+        &self.success
+            + &self.price_not_found
+            + &self.redirected
+            + &self.other_error
+            + &self.page_not_supported
+    }
+}
+
+impl Display for Stats {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write(
+            f,
+            format_args!(
+                "
+Updated {}/{}:
+    - {} successfully updated
+    - {} got redirected away (page not found)
+    - {} price not found on given page (product unavailable probably)
+    - {} other error while downloading occured
+    - {} not supported pages
+",
+                self.done(),
+                self.all,
+                self.success,
+                self.redirected,
+                self.price_not_found,
+                self.other_error,
+                self.page_not_supported
+            ),
+        )
+    }
+}
 
 struct OfferToUpdate {
     offer: Offer,
@@ -59,12 +87,15 @@ enum UpdateOfferError {
 // Public Functions
 
 pub async fn update_all_offers(scraper: &PriceScraper, conn: &PgConnection) {
-    // Initialize Stats struct
-    // let stats = Arc::new(Mutex::new(Stats::default()));
-
     //// Prepare data for tasks
     // Get all offers from database
     let offers = database::models::offer::queries::all_offers(&conn).unwrap();
+
+    // Initialize Stats struct
+    let stats = Rc::new(RefCell::new(Stats {
+        all: offers.len() as u64,
+        ..Default::default()
+    }));
 
     // Get last prices of offers
     let last_prices: Vec<Price> = offers
@@ -95,50 +126,22 @@ pub async fn update_all_offers(scraper: &PriceScraper, conn: &PgConnection) {
             products,
         });
 
-    // Construct on_update closure
-    // stats.lock().unwrap().all = offers_to_update.len() as u64;
-    // let stats_clone = Arc::clone(&stats);
-    // let on_update = || {
-    //     let all;
-    //     let done;
-    //     {
-    //         let stats_lock = stats_clone.lock().unwrap();
-    //         all = stats_lock.all;
-    //         done = stats_lock.done();
-    //         info!("Updated: {done}/{all}");
-    //     }
-    // };
-
     // Get handles to async tasks
-    let handles = offers_to_update.map(|offer| update_price_of_offer(scraper, conn, offer));
+    let handles = offers_to_update
+        .map(|offer| update_price_of_offer(scraper, conn, offer, Rc::clone(&stats)));
 
     // Run asynchronously
     futures::future::join_all(handles).await;
 
-    // Print info stats at the end
-    //     let stats_lock = stats.lock().unwrap();
-    //     let all = stats_lock.all;
-    //     let done = stats_lock.done();
-
-    //     info!(
-    //         "
-    // Updated {}/{}:
-    //     - {} successfully updated
-    //     - {} got redirected away (page not found)
-    //     - {} price not found on given page (product unavailable probably)
-    //     - {} other error while downloading occured
-    //     - {} not supported pages",
-    //         done,
-    //         all,
-    //         stats_lock.success,
-    //         stats_lock.redirected,
-    //         stats_lock.price_not_found,
-    //         stats_lock.other_error,
-    //         stats_lock.page_not_supported
-    //     )
+    info!("{}", stats.as_ref().borrow())
 }
 
-async fn update_price_of_offer(scraper: &PriceScraper, conn: &PgConnection, data: OfferToUpdate) {
+async fn update_price_of_offer(
+    scraper: &PriceScraper,
+    conn: &PgConnection,
+    data: OfferToUpdate,
+    stats: Rc<RefCell<Stats>>,
+) {
     // Try get price
     // TODO: Make fn get_price with parameters, u32 tries, u32 fairness_tries
     let price_result = scraper.get_price_multiple_tries(&data.offer.url, 3).await;
@@ -146,56 +149,60 @@ async fn update_price_of_offer(scraper: &PriceScraper, conn: &PgConnection, data
     // Handle result
     let new_price = match price_result {
         Ok(v) => {
-            // debug!("Got proper price for: {}", offer.url);
-            // stats.lock().unwrap().success += 1;
+            stats.borrow_mut().success += 1;
             CreatePriceInput {
                 offer_id: data.offer.id,
                 value: Some(v),
                 availability: Availability::Available,
             }
         }
-        Err(error) => {
-            // debug!("Couldn't get price for: {}\n{:?}", offer.url, error);
-            match error.current_context() {
-                GetPriceError::PriceNotFound => {
-                    // stats.lock().unwrap().price_not_found += 1;
-                    CreatePriceInput {
-                        offer_id: data.offer.id,
-                        value: None,
-                        availability: Availability::PriceNotFound,
-                    }
-                }
-                GetPriceError::Redirected => {
-                    // stats.lock().unwrap().redirected += 1;
-                    CreatePriceInput {
-                        offer_id: data.offer.id,
-                        value: None,
-                        availability: Availability::SiteNotFound,
-                    }
-                }
-                GetPriceError::ErrorDownloadingPage | GetPriceError::PageDownloadTimeout => {
-                    // stats.lock().unwrap().other_error += 1;
-                    CreatePriceInput {
-                        offer_id: data.offer.id,
-                        value: None,
-                        availability: Availability::Unavailable,
-                    }
-                }
-                GetPriceError::PageNotSupported => {
-                    // stats.lock().unwrap().page_not_supported += 1;
-                    error!(
-                        "\n{:?}",
-                        error
-                            .change_context(UpdateOfferError::PageNotSupported)
-                            .attach_printable(
-                                "Tried to update offer but it seems, page is not supported"
-                            )
-                            .attach_printable(format!("Offer: {:?}", data.offer))
-                    );
-                    return;
+        Err(error) => match error.current_context() {
+            GetPriceError::PriceNotFound => {
+                stats.borrow_mut().price_not_found += 1;
+                log::warn!("\n{:?}", error);
+                CreatePriceInput {
+                    offer_id: data.offer.id,
+                    value: None,
+                    availability: Availability::PriceNotFound,
                 }
             }
-        }
+            GetPriceError::Redirected => {
+                stats.borrow_mut().redirected += 1;
+                log::warn!("\n{:?}", error);
+                CreatePriceInput {
+                    offer_id: data.offer.id,
+                    value: None,
+                    availability: Availability::SiteNotFound,
+                }
+            }
+            GetPriceError::ErrorDownloadingPage | GetPriceError::PageDownloadTimeout => {
+                stats.borrow_mut().other_error += 1;
+                log::warn!("\n{:?}", error);
+                CreatePriceInput {
+                    offer_id: data.offer.id,
+                    value: None,
+                    availability: Availability::Unavailable,
+                }
+            }
+            GetPriceError::PageNotSupported => {
+                stats.borrow_mut().page_not_supported += 1;
+                debug!(
+                    "Updated {}/{}",
+                    stats.as_ref().borrow().done(),
+                    stats.as_ref().borrow().all
+                );
+                error!(
+                    "\n{:?}",
+                    error
+                        .change_context(UpdateOfferError::PageNotSupported)
+                        .attach_printable(
+                            "Tried to update offer but it seems, page is not supported"
+                        )
+                        .attach_printable(format!("Offer: {:?}", data.offer))
+                );
+                return;
+            }
+        },
     };
 
     // Send request to database
@@ -205,6 +212,11 @@ async fn update_price_of_offer(scraper: &PriceScraper, conn: &PgConnection, data
     let new_price = match db_response {
         Ok(v) => v,
         Err(err) => {
+            debug!(
+                "Updated {}/{}",
+                stats.as_ref().borrow().done(),
+                stats.as_ref().borrow().all
+            );
             error!(
                 "\n{}",
                 error_stack::report!(UpdateOfferError::DatabaseError)
@@ -218,8 +230,12 @@ async fn update_price_of_offer(scraper: &PriceScraper, conn: &PgConnection, data
     };
 
     debug!(
-        "Updated: {:?}, {:?} | {}",
-        new_price.availability, new_price.value, data.offer.url
+        "Updated {}/{}: {:?}, {:?} | {}",
+        stats.as_ref().borrow().done(),
+        stats.as_ref().borrow().all,
+        new_price.availability,
+        new_price.value,
+        data.offer.url
     );
 
     if should_send_notification(&data.last_price, &new_price) {
