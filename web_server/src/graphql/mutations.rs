@@ -19,12 +19,9 @@ impl Mutation {
     // PRICE
 
     #[graphql(name = "createPrice")]
-    pub fn create_price(
-        context: &GraphQLContext,
-        input: CreatePriceInput,
-    ) -> FieldResult<Price> {
+    pub fn create_price(context: &GraphQLContext, input: CreatePriceInput) -> FieldResult<Price> {
         let conn = &context.pool.get()?;
-        models::price::mutations::create_price(conn, input)
+        models::price::mutations::create_price(conn, &input)
     }
 
     //////////////////////////////////////////////////////////////////////////
@@ -81,19 +78,17 @@ impl Mutation {
     pub fn delete_product(context: &GraphQLContext, id: i32) -> FieldResult<Product> {
         let conn = &context.pool.get()?;
 
-        let collection =
-            database::models::product::queries::get_collection_of_product(&conn, id)?;
+        let collection = database::models::product::queries::get_collection_of_product(&conn, id)?;
 
         if collection.is_none() {
             return Err(FieldError::from("You're not authorized to do this!\nThis product doesn't belong to collections of yours"));
         } else {
             if let Some(user_id) = context.user_id {
                 // Authorization
-                let owner =
-                    database::models::collection::queries::get_owner_of_collection(
-                        &conn,
-                        collection.unwrap().id,
-                    )?;
+                let owner = database::models::collection::queries::get_owner_of_collection(
+                    &conn,
+                    collection.unwrap().id,
+                )?;
 
                 if owner.id == user_id {
                     return models::product::mutations::delete_product(conn, id);
@@ -147,10 +142,8 @@ impl Mutation {
 
         let conn = &context.pool.get()?;
 
-        let collection = database::models::product::queries::get_collection_of_product(
-            &conn,
-            input.product_id,
-        )?;
+        let collection =
+            database::models::product::queries::get_collection_of_product(&conn, input.product_id)?;
 
         if collection.is_none() {
             return Err(FieldError::from("You're not authorized to do this!\nThis product doesn't belong to collections of yours"));
@@ -164,11 +157,7 @@ impl Mutation {
             )?;
 
             if owner.id == user_id {
-                return models::product::mutations::add_offer(
-                    &conn,
-                    input.product_id,
-                    &input.url,
-                );
+                return models::product::mutations::add_offer(&conn, input.product_id, &input.url);
             } else {
                 return Err(FieldError::from("You're not authorized to do this!\nThis product belongs to a private collection and you don't own it"));
             }
@@ -193,10 +182,7 @@ impl Mutation {
                 public: new_collection.public,
                 user_id,
             };
-            database::models::collection::mutations::create_collection(
-                conn,
-                new_collection,
-            )
+            database::models::collection::mutations::create_collection(conn, new_collection)
         } else {
             Err(FieldError::from("You're not logged in!"))
         }
@@ -240,11 +226,7 @@ impl Mutation {
             )?;
 
             if owner.id == user_id {
-                database::models::collection::mutations::rename(
-                    conn,
-                    collection_id,
-                    new_name,
-                )
+                database::models::collection::mutations::rename(conn, collection_id, new_name)
             } else {
                 Err(FieldError::from("You're not authorized to do this!"))
             }
@@ -262,10 +244,8 @@ impl Mutation {
         let conn = &context.pool.get()?;
 
         // Authorization
-        let owner = database::models::collection::queries::get_owner_of_collection(
-            conn,
-            collection_id,
-        )?;
+        let owner =
+            database::models::collection::queries::get_owner_of_collection(conn, collection_id)?;
 
         if owner.id == user_id {
             database::models::collection::mutations::change_description(

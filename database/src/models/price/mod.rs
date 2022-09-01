@@ -63,7 +63,7 @@ impl Price {
 
 // TODO: This is probably not needed for users outside
 // The GraphQL input object for creating PRICESs
-#[derive(juniper::GraphQLInputObject, Insertable)]
+#[derive(juniper::GraphQLInputObject, Insertable, Debug)]
 #[table_name = "prices"]
 pub struct CreatePriceInput {
     pub offer_id: i32,

@@ -4,10 +4,10 @@
     "run_in_loop": true,
     "interval": 3600,
     "reqwest_selectors": {
-        "x-kom.pl/p": ".n4n86h-4",
+        "x-kom.pl/p": ".sc-n4n86h-4",
+        "al.to/p": ".sc-n4n86h-4",
         "morele.net": ".product-price",
         "komputronik.pl/product/": ".price",
-        "al.to/p": ".n4n86h-4",
         "proshop.pl": ".site-currency-attention",
         "net-s.pl/produkt": ".current-price",
         "drukson.pl": ".product-price .price",
@@ -26,12 +26,20 @@
         "bizserver.eu/pl": "#our_price_display",
         "itnes.pl": "#our_price_display",
         "hardware24.pl": ".current-price > span:nth-of-type(2)",
-        "buy-it.pl": ".current-price"
+        "buy-it.pl": ".current-price",
+        "realmeshop.pl/produkt": ".special-price",
+        "supertech.pl/produkt": ".ps-product__price",
+        "filerosa.pl/pl/p": ".main-price",
+        "fostertechnologies.pl/pl/p": ".main-price",
+        "servecom.pl": "span .actual_price"
     },
     "fantoccini_selectors": {
         "allegro.pl/oferta": "._7030e_5GTr2",
         "oleole.pl": ".selenium-price-normal",
         "euro.com.pl": ".selenium-price-normal",
-        "mediaexpert.pl": ".main-price .whole"
+        "mediaexpert.pl": ".main-price .whole",
+        "neo24.pl": ".uiPriceCss-price-3nF",
+        "neonet.pl": ".uiPriceCss-price-3nF",
+        "conrad.pl/p": ".product-price__primary"
     }
 }

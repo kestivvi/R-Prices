@@ -1,18 +1,13 @@
 use crate::config::PriceScraperConfig;
 use fantoccini::ClientBuilder;
-use std::{collections::HashMap, time::Duration};
+use std::collections::HashMap;
+use tokio::time::{sleep, Duration};
 
 #[derive(Debug)]
 pub enum Error {
     ErrorDownloadingPage,
     PageNotSupported,
     ErrorCreatingFantocciniClient,
-}
-
-enum Selector {
-    Reqwest(String),
-    Fantoccini(String),
-    NotFound,
 }
 
 #[derive(Debug)]
@@ -24,16 +19,208 @@ pub enum PriceEnum {
     SiteNotFound,
 }
 
-struct HtmlDocument {
-    document: String,
-    url: String,
-}
-
 pub struct PriceScraper {
     reqwest_selectors: HashMap<String, String>,
     fantoccini_selectors: HashMap<String, String>,
     reqwest_client: reqwest::Client,
 }
+
+#[derive(thiserror::Error, Debug)]
+#[error("Cannot get price from the page")]
+pub enum GetPriceError {
+    PageNotSupported,
+    PriceNotFound,
+    ErrorDownloadingPage,
+    PageDownloadTimeout,
+    Redirected,
+}
+
+pub enum RequestType {
+    Reqwest,
+    Fantoccini,
+}
+
+#[derive(thiserror::Error, Debug)]
+#[error("Couldn't download page")]
+enum DownloadingError {
+    Timeout,
+    Redirection,
+    CreatingDownloaderClient,
+    GetSourceFromResponse,
+    CannotGetDownloadedUrl,
+    NotValidInputUrl,
+    Other,
+}
+
+#[async_trait::async_trait]
+trait Downloader {
+    async fn download_page(
+        &self,
+        price_scraper: &PriceScraper,
+        url: &str,
+    ) -> error_stack::Result<String, DownloadingError>;
+}
+
+struct ReqwestDownloader;
+
+#[async_trait::async_trait]
+impl Downloader for ReqwestDownloader {
+    async fn download_page(
+        &self,
+        price_scraper: &PriceScraper,
+        url: &str,
+    ) -> error_stack::Result<String, DownloadingError> {
+        // Check if url is valid
+        let url_struct = get_url_struct(url).map_err(|error| {
+            error_stack::report!(error)
+                .change_context(DownloadingError::NotValidInputUrl)
+                .attach_printable("Given url is not valid")
+                .attach_printable(format!("Requested url: {}", url))
+        })?;
+
+        // Send request and get a response
+        let response = price_scraper
+            .reqwest_client
+            .get(url)
+            .send()
+            .await
+            .map_err(|error| {
+                if error.is_timeout() {
+                    error_stack::report!(error)
+                        .change_context(DownloadingError::Timeout)
+                        .attach_printable("Cannot download page due to timeout")
+                        .attach_printable(format!("Requested url: {}", url))
+                } else if error.is_builder() {
+                    error_stack::report!(error)
+                        .change_context(DownloadingError::CreatingDownloaderClient)
+                        .attach_printable(
+                            "Cannot download page cause of error building reqwest client",
+                        )
+                        .attach_printable(format!("Requested url: {}", url))
+                } else if error.is_redirect() {
+                    error_stack::report!(error)
+                        .change_context(DownloadingError::Redirection)
+                        .attach_printable("Cannot download page cause of redirection error")
+                        .attach_printable(format!("Requested url: {}", url))
+                } else {
+                    error_stack::report!(error)
+                        .change_context(DownloadingError::Other)
+                        .attach_printable("Cannot download page cause of unknown error")
+                        .attach_printable(format!("Requested url: {}", url))
+                }
+            })?;
+
+        // Get url of the downloaded page
+        let downloaded_url = response.url();
+
+        // Handle redirection case
+        if url_struct != *downloaded_url {
+            return Err(error_stack::report!(DownloadingError::Redirection)
+                .attach_printable("Downloaded page comes from different url than requested")
+                .attach_printable(format!("Requested url: {}", url))
+                .attach_printable(format!("Downloaded url: {}", downloaded_url)));
+        }
+
+        // Get the source html
+        let text = response.text().await.map_err(|error| {
+            error_stack::report!(error)
+                .change_context(DownloadingError::GetSourceFromResponse)
+                .attach_printable("Couldn't retrieve text from downloaded page for unknown reason")
+                .attach_printable(format!("Requested url: {}", url))
+        })?;
+
+        Ok(text)
+    }
+}
+
+struct FantocciniDownloader;
+
+#[async_trait::async_trait]
+impl Downloader for FantocciniDownloader {
+    async fn download_page(
+        &self,
+        _price_scraper: &PriceScraper,
+        url: &str,
+    ) -> error_stack::Result<String, DownloadingError> {
+        // Check if url is valid
+        let url_struct = get_url_struct(url).map_err(|error| {
+            error_stack::report!(error)
+                .change_context(DownloadingError::NotValidInputUrl)
+                .attach_printable(format!("Given url is not valid. Url: {}", url))
+        })?;
+
+        // Create fantoccini client
+        let fantoccini_client = create_fantoccini_client().await.map_err(|error| {
+            error_stack::report!(error)
+                .change_context(DownloadingError::CreatingDownloaderClient)
+                .attach_printable("Couldn't create fantoccini client")
+        })?;
+
+        // Go to the page
+        fantoccini_client.goto(url).await.map_err(|error| {
+            error_stack::report!(error)
+                .change_context(DownloadingError::Other)
+                .attach_printable(format!(
+                    "Couldn't go to the given url with the fantoccini client. Url: {}",
+                    url
+                ))
+        })?;
+
+        // Get url of the page where we landed
+        let downloaded_url = fantoccini_client
+            .current_url()
+            .await
+            .map_err(|error| {
+                error_stack::report!(error)
+                    .change_context(DownloadingError::CannotGetDownloadedUrl)
+                    .attach_printable(format!("Couldn't get url from the response of fantoccini client. Requested url was: {}", url))
+            })?;
+
+        // Handle redirection case
+        if url_struct != downloaded_url {
+            return Err(
+                error_stack::report!(DownloadingError::Redirection)
+                    .attach_printable(format!(
+                        "Downloaded page comes from different url than requested.\nRequested url: {}\nDownloaded url: {}",
+                        url,
+                        downloaded_url
+                    ))
+            );
+        }
+
+        // Get html source
+        let document = fantoccini_client.source().await.map_err(|error| {
+            error_stack::report!(error)
+                .change_context(DownloadingError::GetSourceFromResponse)
+                .attach_printable(format!(
+                    "Couldn't get the source html code from response of the given url. Url: {}",
+                    url
+                ))
+        })?;
+
+        Ok(document)
+    }
+}
+
+fn get_url_struct(url: &str) -> Result<url::Url, url::ParseError> {
+    url::Url::parse(url)
+}
+
+#[derive(thiserror::Error, Debug)]
+#[error("Couldn't get price from the source of page")]
+enum GetPriceFromSourceError {
+    CannotParseCssSelector,
+    NoMatchesForPricesFound,
+    CannotParseFirstMatchToPrice,
+}
+
+#[derive(thiserror::Error, Debug)]
+#[error("Couldn't parse string to float")]
+struct FloatParseError;
+
+#[derive(thiserror::Error, Debug)]
+#[error("Selector not found for this page. Probably it's not supported.")]
+pub struct GetSelectorError {}
 
 impl PriceScraper {
     /////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -42,6 +229,8 @@ impl PriceScraper {
     pub async fn new(config: PriceScraperConfig) -> Self {
         let reqwest_client = reqwest::ClientBuilder::new()
             .user_agent(&config.user_agent)
+            // TODO: timeout from config
+            .timeout(std::time::Duration::from_secs(20))
             .build()
             .unwrap_or_else(|e| {
                 panic!(
@@ -57,221 +246,249 @@ impl PriceScraper {
         }
     }
 
-    pub async fn get_price_from_url(&self, url: &str) -> Result<PriceEnum, Error> {
-        let selector = self.get_selector(url);
-        let mut document = String::default();
+    pub async fn get_price(&self, url: &str) -> error_stack::Result<f64, GetPriceError> {
+        let (downloader, css_selector) = self
+            .get_download_page_fn_and_css_selector(url)
+            .map_err(|error| {
+                error
+                    .change_context(GetPriceError::PageNotSupported)
+                    .attach_printable(format!("Cannot get css selector for this url from config file, probably this domain is not supported. Url: {}", url))
+            })?;
 
-        for i in 1..=4 {
-            match self.get_html(url, &selector).await {
-                Ok(v) => {
-                    let gotten_url;
-                    HtmlDocument {
-                        document,
-                        url: gotten_url,
-                    } = v;
-                    if !Self::are_urls_equal(url, &gotten_url) {
-                        return Ok(PriceEnum::SiteNotFound);
-                    }
-                    break;
-                }
-                Err(e) => match e {
-                    Error::ErrorDownloadingPage => {
-                        log::error!("Cannot download page: {url}");
-
-                        if i == 4 {
-                            return Err(Error::ErrorDownloadingPage);
-                        }
-
-                        log::error!("Trying again in a {} seconds for the {}/3 time", i * 10, i);
-                        tokio::time::sleep(Duration::from_secs(i * 10)).await;
-                        log::error!("Trying now");
-                    }
-                    err => return Err(err),
+        let page = downloader
+            .download_page(&self, url)
+            .await
+            .map_err(|error| match error.current_context() {
+                DownloadingError::Redirection => {
+                    error
+                    .change_context(GetPriceError::Redirected)
+                    .attach_printable("Couldn't download page because server redirected away from it. Probably it doesn't exist")
+                    .attach_printable(format!("Requested url: {}", url))
                 },
-            };
-        }
-        let selector = match selector {
-            Selector::Reqwest(v) => v,
-            Selector::Fantoccini(v) => v,
-            Selector::NotFound => return Err(Error::PageNotSupported),
-        };
+                DownloadingError::NotValidInputUrl => todo!(),
+                _ => error
+                    .change_context(GetPriceError::ErrorDownloadingPage)
+                    .attach_printable("Cannot download page for some reason")
+                    .attach_printable(format!("Requested url: {}", url))
+            })?;
 
-        match self.get_price_from_html(&document, &selector) {
-            Some(v) => Ok(PriceEnum::Available(v)),
-            None => Ok(PriceEnum::PriceNotFound),
+        let price = Self::get_price_from_html(&page, &css_selector).map_err(|error| {
+            error
+                .change_context(GetPriceError::PriceNotFound)
+                .attach_printable("Error trying to get price from page")
+                .attach_printable(format!("Url: {}", url))
+        })?;
+
+        Ok(price)
+    }
+
+    pub async fn get_price_multiple_tries(
+        &self,
+        url: &str,
+        number_of_tries: u64,
+    ) -> error_stack::Result<f64, GetPriceError> {
+        let mut i = 0;
+        let mut dur = (i + 1) * 10;
+        let price = loop {
+            match self.get_price(url).await {
+                Ok(v) => break Ok(v),
+                Err(error) => {
+                    if i < number_of_tries {
+                        i += 1;
+                        sleep(Duration::from_secs(dur)).await;
+                        dur = dur * 2;
+                        continue;
+                    }
+                    break Err(error);
+                }
+            }
+        };
+        price
+    }
+
+    fn get_download_page_fn_and_css_selector<'a>(
+        &'a self,
+        url: &str,
+    ) -> error_stack::Result<(Box<dyn Downloader>, &'a str), GetSelectorError> {
+        // First look for selector in reqwest_selectors
+        let reqwest_selector = self
+            .reqwest_selectors
+            .iter()
+            .find(|(k, _)| url.contains(*k));
+
+        if let Some((_, v)) = reqwest_selector {
+            return Ok((Box::new(ReqwestDownloader), v));
         }
+
+        // Then look for selector in fantoccini_selectors
+        let fantoccini_selector = self
+            .fantoccini_selectors
+            .iter()
+            .find(|(k, _)| url.contains(*k));
+
+        if let Some((_, v)) = fantoccini_selector {
+            return Ok((Box::new(FantocciniDownloader), v));
+        }
+
+        // If not found, this means page is not supported
+        return Err(
+            error_stack::report!(GetSelectorError {}).attach_printable(format!(
+                "Page with domain of that url was not found in web_scraper_settings.json. Url: {}",
+                url
+            )),
+        );
     }
 
     /////////////////////////////////////////////////////////////////////////////////////////////////////////
     // PRIVATE
 
-    fn are_urls_equal(url_1: &str, url_2: &str) -> bool {
-        let it1 = url_1.chars().filter(|&c| c.is_ascii_alphanumeric());
-        let it2 = url_2.chars().filter(|&c| c.is_ascii_alphanumeric());
-        it1.eq(it2)
-    }
-
-    fn get_selector(&self, url: &str) -> Selector {
-        let found = self
-            .reqwest_selectors
-            .iter()
-            .find(|(k, _)| url.contains(*k));
-
-        if let Some((_, v)) = found {
-            return Selector::Reqwest(v.to_owned());
-        }
-
-        let found = self
-            .fantoccini_selectors
-            .iter()
-            .find(|(k, _)| url.contains(*k));
-
-        if let Some((_, v)) = found {
-            return Selector::Fantoccini(v.to_owned());
-        }
-
-        Selector::NotFound
-    }
-
-    async fn get_html(&self, url: &str, selector: &Selector) -> Result<HtmlDocument, Error> {
-        // TODO: Get url of the downloaded website
-        // self.reqwest_client.get(url).send().await.unwrap().url()
-        match selector {
-            Selector::Reqwest(_) => {
-                let response_result = self.reqwest_client.get(url).send().await;
-                match response_result {
-                    Ok(response) => {
-                        let url = response.url().to_string();
-                        let document_result = response.text().await;
-                        match document_result {
-                            Ok(document) => Ok(HtmlDocument {
-                                document: document.to_owned(),
-                                url,
-                            }),
-                            Err(_) => return Err(Error::ErrorDownloadingPage),
-                        }
-                    }
-                    Err(_) => return Err(Error::ErrorDownloadingPage),
+    fn string_to_float(s: &str) -> error_stack::Result<f64, FloatParseError> {
+        let mut first_dot = true;
+        s.chars()
+            .into_iter()
+            .map(|c| if c == ',' { '.' } else { c })
+            // TODO: Try doing it with Iterator::scan()
+            .filter(|&c| {
+                let first_occurence_of_dot = c == '.' && first_dot;
+                if first_occurence_of_dot {
+                    first_dot = false;
                 }
-            }
-            Selector::Fantoccini(_) => {
-                let fantoccini_client = create_fantoccini_client().await;
-
-                fantoccini_client
-                    .goto(url)
-                    .await
-                    .map_err(|_| Error::ErrorDownloadingPage)?;
-
-                let document = fantoccini_client
-                    .source()
-                    .await
-                    .map_err(|_| Error::ErrorDownloadingPage)?;
-
-                let url = fantoccini_client
-                    .current_url()
-                    .await
-                    .map_err(|_| Error::ErrorDownloadingPage)?
-                    .to_string();
-
-                Ok(HtmlDocument { document, url })
-            }
-            Selector::NotFound => Err(Error::PageNotSupported),
-        }
+                c.is_numeric() || first_occurence_of_dot
+            })
+            .collect::<String>()
+            .parse::<f64>()
+            .map_err(|error| {
+                error_stack::report!(error)
+                    .change_context(FloatParseError)
+                    .attach_printable(format!("Cannot parse string to float. String: {}", s))
+            })
     }
 
-    fn get_price_from_html(&self, document: &str, selector: &str) -> Option<f64> {
-        fn string_to_float(s: &str) -> Option<f64> {
-            let mut first_dot = true;
-            s.chars()
-                .into_iter()
-                .map(|c| if c == ',' { '.' } else { c })
-                .filter(|&c| {
-                    let first_occurence_of_dot = c == '.' && first_dot;
-                    if first_occurence_of_dot {
-                        first_dot = false;
-                    }
-                    c.is_numeric() || first_occurence_of_dot
-                })
-                .collect::<String>()
-                .parse::<f64>()
-                .ok()
-        }
-
+    fn get_price_from_html(
+        document: &str,
+        css_selector: &str,
+    ) -> error_stack::Result<f64, GetPriceFromSourceError> {
         // Prepare for parsing
-        let scraper_selector = scraper::Selector::parse(selector).unwrap();
-        let html = scraper::Html::parse_document(&document);
+        // Get selector struct
+        let scraper_selector = scraper::Selector::parse(css_selector).map_err(|error| {
+            error_stack::report!(GetPriceFromSourceError::CannotParseCssSelector)
+                .attach_printable(format!(
+                    "Couldn't parse css selector. Given css selector: {}",
+                    css_selector
+                ))
+                .attach_printable(format!("Cause: {:?}", error))
+        })?;
+
+        // Parse document
+        let source = scraper::Html::parse_document(&document);
 
         // Find potential matches
-        let potential_prices = html.select(&scraper_selector);
+        let matches = source.select(&scraper_selector);
 
-        let potential_prices = potential_prices
-            .map(|el| el.text())
-            .map(|el| el.collect::<String>())
+        // Convert matches to vec of strings
+        let matches = matches
+            .map(|el| el.text().collect::<String>())
             .collect::<Vec<String>>();
 
-        let potential_prices = potential_prices
+        // Handle no matches case
+        if matches.len() == 0 {
+            return Err(
+                error_stack::report!(GetPriceFromSourceError::NoMatchesForPricesFound)
+                    .attach_printable("No matches for potential matches found")
+                    .attach(css_selector.to_owned())
+                    .attach(document.to_owned()),
+            );
+        }
+        // Convert to prices
+        let potential_prices = matches
             .iter()
-            .map(|el| string_to_float(&el))
-            .flatten()
-            .collect::<Vec<f64>>();
+            .map(|el| Self::string_to_float(&el))
+            .collect::<Vec<_>>();
 
-        // Get first price if it exists at all
-        potential_prices.into_iter().next()
+        // Get first price
+        let price = potential_prices
+            .into_iter()
+            .next()
+            .ok_or_else(|| {
+                error_stack::report!(GetPriceFromSourceError::NoMatchesForPricesFound)
+                    .attach_printable("This code should be unreacheable, but maybe I'm wrong")
+                    .attach_printable("No matches for potential matches found")
+                    .attach(css_selector.to_owned())
+                    .attach(document.to_owned())
+            })?
+            .map_err(|error| {
+                error
+                    .change_context(GetPriceFromSourceError::CannotParseFirstMatchToPrice)
+                    .attach_printable("Couldn't parse first match to price")
+                    .attach(matches)
+                    .attach(css_selector.to_owned())
+                    .attach(document.to_owned())
+            })?;
+
+        Ok(price)
     }
 }
 
-async fn create_fantoccini_client() -> fantoccini::Client {
-    let mut i = 1;
-    loop {
-        let fantoccini_client = ClientBuilder::native()
-            .connect("http://localhost:4444")
-            .await;
+#[derive(thiserror::Error, Debug)]
+#[error("Couldn't create fantoccini client")]
+enum CreateFantocciniError {
+    BadWebdriverUrl,
+    ConnectingToWebdriver,
+    SettingUserAgent,
+}
 
-        let fantoccini_client = match fantoccini_client {
-            Ok(v) => v,
-            Err(e) => {
-                if i == 4 {
-                    panic!(
-                        "Error while trying building a fantoccini client: {}",
-                        e.to_string()
-                    );
+async fn create_fantoccini_client() -> error_stack::Result<fantoccini::Client, CreateFantocciniError>
+{
+    // TODO: Get url for webdriver from config
+    let webdriver_url = "http://localhost:4444";
+
+    // Connecting to webdriver
+    let fantoccini_client = ClientBuilder::native()
+        .connect(webdriver_url)
+        .await
+        .map_err(|error| {
+            match error {
+                fantoccini::error::NewSessionError::BadWebdriverUrl(error) => {
+                    error_stack::report!(error)
+                    .change_context(CreateFantocciniError::BadWebdriverUrl)
+                    .attach_printable(
+                        format!(
+                            "Url provided for connecting to selenium webdriver for fantoccini is wrong. 
+                            Please check config file and if docker selenium webdriver is working properly
+                            Provided webdriver url: {}", webdriver_url
+                        )
+                    )
+                },
+                error => {
+                    error_stack::report!(error)
+                    .change_context(CreateFantocciniError::ConnectingToWebdriver)
+                    .attach_printable(
+                        format!(
+                            "Error occured while connecting to selenium webdriver. 
+                            Please check config file and if docker selenium webdriver is working properly. 
+                            Maybe webdriver is overloaded or misconfigured.
+                            Maybe it needs restarting.
+                            Provided webdriver url: {}", webdriver_url
+                        )
+                    )
                 }
-                log::error!(
-                    "Can't create fantoccini client, trying again in a {} seconds for the {} time",
-                    i * 10,
-                    i
-                );
-                i += 1;
-                tokio::time::sleep(Duration::from_secs(i * 10)).await;
-                continue;
             }
-        };
+        })?;
 
-        let setting_ua_result = fantoccini_client.set_ua(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36"
-            )
-            .await;
+    // Set the user-agent
+    // TODO: Get random user-agent from some list in the config
+    let user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36";
+    fantoccini_client
+        .set_ua(user_agent)
+        .await
+        .map_err(|error| {
+            error_stack::report!(error)
+                .change_context(CreateFantocciniError::SettingUserAgent)
+                .attach_printable(format!(
+                    "Couldn't set user agent for some unknown reason. Tried to set user agent: {}",
+                    user_agent
+                ))
+        })?;
 
-        match setting_ua_result {
-            Ok(v) => v,
-            Err(e) => {
-                if i == 4 {
-                    panic!(
-                        "Error while trying building a fantoccini client: {}",
-                        e.to_string()
-                    );
-                }
-                log::error!(
-                    "Can't set fantoccini client user-agent, trying creating entire client again in a {} seconds for the {} time",
-                    i * 10,
-                    i
-                );
-                i += 1;
-                tokio::time::sleep(Duration::from_secs(i * 10)).await;
-                continue;
-            }
-        };
-
-        break fantoccini_client;
-    }
+    Ok(fantoccini_client)
 }
