@@ -5,7 +5,7 @@ use log::info;
 use std::time::Duration;
 use web_scraper::config::PriceScraperConfig;
 use web_scraper::price_scraper::PriceScraper;
-use web_scraper::update_all_offers;
+use web_scraper::tasks::update_all_offers_and_send_notifications;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Utils
@@ -38,7 +38,7 @@ async fn run() {
             info!("Updating products");
 
             let timer = std::time::Instant::now();
-            update_all_offers(&scraper, conn).await;
+            update_all_offers_and_send_notifications(&scraper, conn).await;
             let elapsed_time = timer.elapsed().as_secs_f32();
             info!("Updating prices took {} secs", elapsed_time);
         }

@@ -27,7 +27,6 @@
         "itnes.pl": "#our_price_display",
         "hardware24.pl": ".current-price > span:nth-of-type(2)",
         "buy-it.pl": ".current-price",
-        "realmeshop.pl/produkt": ".special-price",
         "supertech.pl/produkt": ".ps-product__price",
         "filerosa.pl/pl/p": ".main-price",
         "fostertechnologies.pl/pl/p": ".main-price",
