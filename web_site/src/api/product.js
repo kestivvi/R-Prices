@@ -146,6 +146,10 @@ export const getFullProductById = async (id) => {
     })
 
     //// - UPDATE STORE
+    data.offers.map(offer => {
+        offer.prices.sort((a, b) => a.createdAt - b.createdAt);
+        return offer;
+    });
     currentProductStore.set(data);
 };
 
