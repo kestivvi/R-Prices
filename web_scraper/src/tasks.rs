@@ -137,12 +137,7 @@ async fn update_price_of_offer(
     // Try get price
     // TODO: Make fn get_price with parameters, u32 tries, u32 fairness_tries
     let price_result = scraper
-        .get_price_multiple_tries_and_fairness(
-            &offer.url,
-            4,
-            3,
-            prices.get(0).map(|v| v.value).flatten(),
-        )
+        .get_price(&offer.url, prices.get(0).map(|v| v.value).flatten())
         .await;
 
     // Handle result

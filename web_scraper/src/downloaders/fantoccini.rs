@@ -49,14 +49,10 @@ impl Downloader for FantocciniDownloader {
 
         // Handle redirection case
         if url_struct != downloaded_url {
-            return Err(
-                error_stack::report!(DownloadingError::Redirection)
-                    .attach_printable(format!(
-                        "Downloaded page comes from different url than requested.\nRequested url: {}\nDownloaded url: {}",
-                        url,
-                        downloaded_url
-                    ))
-            );
+            return Err(error_stack::report!(DownloadingError::Redirection)
+                .attach_printable("Downloaded page comes from different url than requested.")
+                .attach_printable(format!("Requested url: {}", url))
+                .attach_printable(format!("Downloaded url: {}", downloaded_url)));
         }
 
         // Get html source

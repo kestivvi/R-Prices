@@ -26,5 +26,6 @@ fantoccini = { version = "0.19.1", features = ["rustls-tls", "native-tls"] }
 async-trait = "0.1.57"
 url = "2.2.2"
 itertools = "0.10.3"
+tokio-retry = "0.3.0"
 
 database = { path = "../database" }

@@ -11,7 +11,7 @@ impl Downloader for ReqwestDownloader {
         url: &str,
     ) -> error_stack::Result<String, DownloadingError> {
         // Check if url is valid
-        let url_struct = get_url_struct(url).map_err(|error| {
+        let url_struct = get_url_struct(url.trim_end_matches(|c| c == '/')).map_err(|error| {
             error_stack::report!(error)
                 .change_context(DownloadingError::NotValidInputUrl)
                 .attach_printable("Given url is not valid")
@@ -51,10 +51,18 @@ impl Downloader for ReqwestDownloader {
             })?;
 
         // Get url of the downloaded page
-        let downloaded_url = response.url();
+        let downloaded_url = url::Url::parse(
+            &response.url().to_string().trim_end_matches(|c| c == '/'),
+        )
+        .map_err(|error| {
+            error_stack::report!(error)
+                .change_context(DownloadingError::CannotGetDownloadedUrl)
+                .attach_printable("Tried to parse url gotten from downloaded page")
+                .attach_printable(format!("Url tried to parse: {}", response.url()))
+        })?;
 
         // Handle redirection case
-        if url_struct != *downloaded_url {
+        if url_struct != downloaded_url {
             return Err(error_stack::report!(DownloadingError::Redirection)
                 .attach_printable("Downloaded page comes from different url than requested")
                 .attach_printable(format!("Requested url: {}", url))

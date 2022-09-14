@@ -36,7 +36,7 @@
         "allegro.pl/oferta": "._7030e_5GTr2",
         "oleole.pl": ".selenium-price-normal",
         "euro.com.pl": ".selenium-price-normal",
-        "mediaexpert.pl": ".main-price .whole",
+        "mediaexpert.pl": "div.prices-section > div.prices > div.main-price > span.whole",
         "neo24.pl": ".uiPriceCss-price-3nF",
         "neonet.pl": ".uiPriceCss-price-3nF",
         "conrad.pl/p": ".product-price__primary"
