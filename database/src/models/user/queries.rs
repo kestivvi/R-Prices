@@ -47,5 +47,5 @@ pub fn is_that_user_have_that_passwd(conn: &PgConnection, user_id: i32, passwd: 
         Err(_) => return false,
     };
 
-    return user.password == passwd;
+    user.password == passwd
 }

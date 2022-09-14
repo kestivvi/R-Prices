@@ -21,7 +21,7 @@ use crate::price_scraper::{GetPriceError, PriceScraper};
 pub async fn update_all_offers_and_send_notifications(scraper: &PriceScraper, conn: &PgConnection) {
     //// Prepare data for tasks
     // Get all offers from database
-    let offers = database::models::offer::queries::all_offers(&conn).unwrap();
+    let offers = database::models::offer::queries::all_offers(conn).unwrap();
 
     // Initialize Stats struct
     let stats = Rc::new(RefCell::new(Stats {
@@ -33,8 +33,8 @@ pub async fn update_all_offers_and_send_notifications(scraper: &PriceScraper, co
     let last_prices: Vec<Vec<Price>> = offers
         .iter()
         .map(|offer| {
-            database::models::price::queries::get_last_prices_of_offer(&conn, offer.id, 72)
-                .unwrap_or(Vec::new())
+            database::models::price::queries::get_last_prices_of_offer(conn, offer.id, 72)
+                .unwrap_or_default()
         })
         .collect();
 
@@ -42,8 +42,8 @@ pub async fn update_all_offers_and_send_notifications(scraper: &PriceScraper, co
     let products: Vec<Vec<Product>> = offers
         .iter()
         .map(|offer| {
-            database::models::offer::queries::get_products_of_offer(&conn, offer.id)
-                .unwrap_or(Vec::new())
+            database::models::offer::queries::get_products_of_offer(conn, offer.id)
+                .unwrap_or_default()
         })
         .collect();
 
@@ -77,11 +77,11 @@ struct Stats {
 
 impl Stats {
     fn done(&self) -> u64 {
-        &self.success
-            + &self.price_not_found
-            + &self.redirected
-            + &self.other_error
-            + &self.page_not_supported
+        self.success
+            + self.price_not_found
+            + self.redirected
+            + self.other_error
+            + self.page_not_supported
     }
 }
 
@@ -135,9 +135,8 @@ async fn update_price_of_offer(
     stats: Rc<RefCell<Stats>>,
 ) {
     // Try get price
-    // TODO: Make fn get_price with parameters, u32 tries, u32 fairness_tries
     let price_result = scraper
-        .get_price(&offer.url, prices.get(0).map(|v| v.value).flatten())
+        .get_price(&offer.url, prices.get(0).and_then(|v| v.value))
         .await;
 
     // Handle result
@@ -251,7 +250,7 @@ fn send_notification_if_neccesary(
         if last_available_prices.len() < 2 {
             false
         } else {
-            &last_available_prices[0].value.unwrap() < &last_available_prices[1].value.unwrap()
+            last_available_prices[0].value.unwrap() < last_available_prices[1].value.unwrap()
         }
     };
 

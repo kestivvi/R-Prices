@@ -19,10 +19,7 @@ impl Query {
         models::price::queries::all_prices(conn)
     }
 
-    pub fn get_price_by_id(
-        context: &GraphQLContext,
-        id: i32,
-    ) -> FieldResult<Option<Price>> {
+    pub fn get_price_by_id(context: &GraphQLContext, id: i32) -> FieldResult<Option<Price>> {
         let conn = &context.pool.get()?;
         models::price::queries::get_price_by_id(conn, id)
     }
@@ -54,30 +51,26 @@ impl Query {
     pub fn get_product_by_id(context: &GraphQLContext, id: i32) -> FieldResult<Product> {
         let conn = context.pool.get()?;
 
-        let collection =
-            database::models::product::queries::get_collection_of_product(&conn, id)?;
+        let collection = database::models::product::queries::get_collection_of_product(&conn, id)?;
 
         let product = database::models::product::queries::get_product_by_id(&conn, id);
 
         if collection.is_none() || collection.as_ref().unwrap().public {
-            return product;
-        } else {
-            if let Some(user_id) = context.user_id {
-                // Authorization
-                let owner =
-                    database::models::collection::queries::get_owner_of_collection(
-                        &conn,
-                        collection.unwrap().id,
-                    )?;
+            product
+        } else if let Some(user_id) = context.user_id {
+            // Authorization
+            let owner = database::models::collection::queries::get_owner_of_collection(
+                &conn,
+                collection.unwrap().id,
+            )?;
 
-                if owner.id == user_id {
-                    return product;
-                } else {
-                    return Err(FieldError::from("You're not authorized to do this!\nThis product belongs to a private collection and you don't own it"));
-                }
+            if owner.id == user_id {
+                product
             } else {
-                return Err(FieldError::from("You're not logged in!"));
+                Err(FieldError::from("You're not authorized to do this!\nThis product belongs to a private collection and you don't own it"))
             }
+        } else {
+            Err(FieldError::from("You're not logged in!"))
         }
     }
 
@@ -89,9 +82,7 @@ impl Query {
         database::models::collection::queries::all_collections(conn)
     }
 
-    pub fn all_public_collections(
-        context: &GraphQLContext,
-    ) -> FieldResult<Vec<Collection>> {
+    pub fn all_public_collections(context: &GraphQLContext) -> FieldResult<Vec<Collection>> {
         let conn = &context.pool.get()?;
         database::models::collection::queries::all_public_collections(conn)
     }
@@ -102,10 +93,8 @@ impl Query {
     ) -> FieldResult<Collection> {
         let conn = &context.pool.get()?;
 
-        let collection = database::models::collection::queries::get_collection_by_id(
-            conn,
-            collection_id,
-        )?;
+        let collection =
+            database::models::collection::queries::get_collection_by_id(conn, collection_id)?;
 
         if collection.public {
             return Ok(collection);
@@ -119,21 +108,19 @@ impl Query {
             )?;
 
             if owner.id == user_id {
-                return Ok(collection);
+                Ok(collection)
             } else {
-                return Err(FieldError::from("You're not authorized to do this!\nThis collection is set as private and you don't own it"));
+                Err(FieldError::from("You're not authorized to do this!\nThis collection is set as private and you don't own it"))
             }
         } else {
-            return Err(FieldError::from("You're not logged in!"));
+            Err(FieldError::from("You're not logged in!"))
         }
     }
 
     pub fn get_my_collections(context: &GraphQLContext) -> FieldResult<Vec<Collection>> {
         let conn = &context.pool.get()?;
         match context.user_id {
-            Some(v) => {
-                database::models::collection::queries::get_collections_of_user(conn, v)
-            }
+            Some(v) => database::models::collection::queries::get_collections_of_user(conn, v),
             None => Err(FieldError::from("You're not logged in")),
         }
     }
@@ -146,17 +133,16 @@ impl Query {
 
         match context.user_id {
             Some(user_id) => {
-                let owner =
-                    database::models::collection::queries::get_owner_of_collection(
-                        conn,
-                        collection_id,
-                    )?;
+                let owner = database::models::collection::queries::get_owner_of_collection(
+                    conn,
+                    collection_id,
+                )?;
 
                 if owner.id == user_id {
-                    return Ok(true);
+                    Ok(true)
                 } else {
-                    return Ok(false);
-                };
+                    Ok(false)
+                }
             }
             None => Ok(false),
         }

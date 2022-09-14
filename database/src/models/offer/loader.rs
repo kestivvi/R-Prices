@@ -29,7 +29,7 @@ impl OfferBatcher {
         let conn = self.pool.get().unwrap();
 
         ids.iter().for_each(|&id| {
-            hashmap.entry(id).or_insert_with(|| Vec::<Offer>::new());
+            hashmap.entry(id).or_insert_with(Vec::new);
         });
 
         offers::table

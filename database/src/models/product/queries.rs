@@ -51,7 +51,7 @@ pub fn is_user_notified_about_product(
         .load(conn);
 
     let res = utils::graphql_translate(res)?;
-    return Ok(res.len() > 0);
+    Ok(!res.is_empty())
 }
 
 pub fn get_collection_of_product(
@@ -66,7 +66,7 @@ pub fn get_collection_of_product(
         .load::<Collection>(conn);
 
     if let Ok(v) = res {
-        if v.len() == 0 {
+        if v.is_empty() {
             Ok(None)
         } else {
             utils::graphql_translate(Ok(Some(v[0].clone())))

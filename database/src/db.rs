@@ -11,7 +11,7 @@ pub fn get_pool(db_url: &str) -> PostgresPool {
     r2d2::Pool::builder()
         .min_idle(Some(1))
         .max_size(30)
-        .build(mgr.into())
+        .build(mgr)
         .map_err(|e| {
             log::error!(
                 "Error while building connection to database: {}",

@@ -64,10 +64,7 @@ impl PriceScraper {
             .timeout(std::time::Duration::from_secs(20))
             .build()
             .unwrap_or_else(|e| {
-                panic!(
-                    "Error while trying building a reqwest client: {}",
-                    e.to_string()
-                );
+                panic!("Error while trying building a reqwest client: {:?}", e);
             });
 
         Self {
@@ -114,13 +111,13 @@ impl PriceScraper {
             // Sleep for `duration` (secs) time
             sleep(Duration::from_secs(duration)).await;
             // TODO: Multiplier in the some config.json
-            duration = duration * 2;
+            duration *= 2;
 
             // Try to get price again
             price = self.get_price_retry_error(url).await?;
         }
 
-        return Ok(price);
+        Ok(price)
     }
 
     /// Maybe you want some debugging info, so you can get blocks on the page, that bot thinks there are prices in
@@ -138,15 +135,12 @@ impl PriceScraper {
             })?;
 
         // Dowload page
-        let page = downloader
-            .download_page(&self, url)
-            .await
-            .map_err(|error| {
-                error_stack::report!(error)
-                    .change_context(GetPotentialPricesError::CannotDownloadPage)
-                    .attach_printable("Cannot download the page")
-                    .attach_printable(format!("Url: {}", url))
-            })?;
+        let page = downloader.download_page(self, url).await.map_err(|error| {
+            error_stack::report!(error)
+                .change_context(GetPotentialPricesError::CannotDownloadPage)
+                .attach_printable("Cannot download the page")
+                .attach_printable(format!("Url: {}", url))
+        })?;
 
         // Construct html scraper
         let scraper_selector = scraper::Selector::parse(css_selector).map_err(|error| {
@@ -187,9 +181,8 @@ impl PriceScraper {
         // Get price, first try
         let mut price = self.get_price_once(url).await;
 
-        match price {
-            Ok(v) => return Ok(v),
-            Err(_) => {}
+        if let Ok(v) = price {
+            return Ok(v);
         }
 
         // Loop if the price seems not fair, suspicious
@@ -205,10 +198,10 @@ impl PriceScraper {
             // Sleep for `duration` (secs) time
             sleep(Duration::from_secs(duration)).await;
             // TODO: Multiplier in the some config.json
-            duration = duration * 2;
+            duration *= 2;
         }
 
-        return price;
+        price
     }
 
     async fn get_price_once(&self, url: &str) -> error_stack::Result<f64, GetPriceError> {
@@ -217,10 +210,9 @@ impl PriceScraper {
             .await
             .map_err(|error| error.change_context(GetPriceError::ErrorDownloadingPage))?
             .iter()
-            .map(|s| utils::string_to_float(s))
-            .flatten()
+            .flat_map(|s| utils::string_to_float(s))
             .next()
-            .ok_or_else(|| GetPriceError::PriceNotFound)?)
+            .ok_or(GetPriceError::PriceNotFound)?)
     }
 
     fn get_downloader_and_css_selector<'a>(

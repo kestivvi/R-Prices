@@ -41,13 +41,9 @@ async fn graphql(
     debug!("Request Cookies: {:?}", request.cookies());
     let user_id = request
         .cookie("session_id")
-        .map(|v| v.value().parse::<i32>().ok())
-        .flatten()
+        .and_then(|v| v.value().parse::<i32>().ok())
         .and_then(|session_id| {
-            database::models::session::queries::get_user_id(
-                &pool.get().unwrap(),
-                session_id,
-            )
+            database::models::session::queries::get_user_id(&pool.get().unwrap(), session_id)
         });
 
     // Instantiate a context

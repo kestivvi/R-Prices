@@ -121,7 +121,7 @@ pub fn add_offer(conn: &PgConnection, product_id: i32, new_offer_url: &str) -> F
                 ))
                 .execute(conn)?;
 
-            return utils::graphql_translate(res);
+            utils::graphql_translate(res)
         }
     }
 }

@@ -14,7 +14,7 @@ async fn main() {
         }
     };
 
-    let config = PriceScraperConfig::new();
+    let config = PriceScraperConfig::default();
     let scraper = PriceScraper::new(config).await;
 
     let potential_prices_result = scraper.get_potential_prices_blocks(&url).await;
@@ -28,7 +28,7 @@ async fn main() {
         }
     };
 
-    if potential_prices.len() == 0 {
+    if potential_prices.is_empty() {
         println!("Not found any potential blocks with price");
         return;
     }

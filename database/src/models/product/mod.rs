@@ -48,8 +48,7 @@ impl Product {
     // TODO: get notification of a product
     pub fn notified_users(&self, context: &GraphQLContext) -> Vec<User> {
         let conn = &context.pool.get().unwrap();
-        let x = queries::users_notified_of_product(conn, self.id).unwrap();
-        x
+        queries::users_notified_of_product(conn, self.id).unwrap()
     }
 
     pub async fn offers(&self, context: &GraphQLContext) -> Vec<Offer> {

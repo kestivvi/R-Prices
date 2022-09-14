@@ -1,4 +1,3 @@
-use database;
 use database::db::get_pool;
 use log::info;
 use std::time::Duration;
@@ -14,7 +13,7 @@ async fn run() {
     loop {
         // Get configuration and other stuff
         info!("Getting configuration");
-        let price_scraper_config = PriceScraperConfig::new();
+        let price_scraper_config = PriceScraperConfig::default();
 
         {
             // Get things

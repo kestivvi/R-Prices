@@ -78,26 +78,24 @@ impl Mutation {
     pub fn delete_product(context: &GraphQLContext, id: i32) -> FieldResult<Product> {
         let conn = &context.pool.get()?;
 
-        let collection = database::models::product::queries::get_collection_of_product(&conn, id)?;
+        let collection = database::models::product::queries::get_collection_of_product(conn, id)?;
 
         if collection.is_none() {
-            return Err(FieldError::from("You're not authorized to do this!\nThis product doesn't belong to collections of yours"));
-        } else {
-            if let Some(user_id) = context.user_id {
-                // Authorization
-                let owner = database::models::collection::queries::get_owner_of_collection(
-                    &conn,
-                    collection.unwrap().id,
-                )?;
+            Err(FieldError::from("You're not authorized to do this!\nThis product doesn't belong to collections of yours"))
+        } else if let Some(user_id) = context.user_id {
+            // Authorization
+            let owner = database::models::collection::queries::get_owner_of_collection(
+                conn,
+                collection.unwrap().id,
+            )?;
 
-                if owner.id == user_id {
-                    return models::product::mutations::delete_product(conn, id);
-                } else {
-                    return Err(FieldError::from("You're not authorized to do this!\nThis product belongs to a private collection and you don't own it"));
-                }
+            if owner.id == user_id {
+                models::product::mutations::delete_product(conn, id)
             } else {
-                return Err(FieldError::from("You're not logged in!"));
+                Err(FieldError::from("You're not authorized to do this!\nThis product belongs to a private collection and you don't own it"))
             }
+        } else {
+            Err(FieldError::from("You're not logged in!"))
         }
     }
 
@@ -112,7 +110,7 @@ impl Mutation {
             match models::product::mutations::update_notification(
                 conn, product_id, user_id, new_value,
             ) {
-                true => models::product::queries::get_product_by_id(&conn, product_id),
+                true => models::product::queries::get_product_by_id(conn, product_id),
                 false => Err(FieldError::from("Some error updating notification")),
             }
         } else {
@@ -143,7 +141,7 @@ impl Mutation {
         let conn = &context.pool.get()?;
 
         let collection =
-            database::models::product::queries::get_collection_of_product(&conn, input.product_id)?;
+            database::models::product::queries::get_collection_of_product(conn, input.product_id)?;
 
         if collection.is_none() {
             return Err(FieldError::from("You're not authorized to do this!\nThis product doesn't belong to collections of yours"));
@@ -152,17 +150,17 @@ impl Mutation {
         if let Some(user_id) = context.user_id {
             // Authorization
             let owner = database::models::collection::queries::get_owner_of_collection(
-                &conn,
+                conn,
                 collection.unwrap().id,
             )?;
 
             if owner.id == user_id {
-                return models::product::mutations::add_offer(&conn, input.product_id, &input.url);
+                models::product::mutations::add_offer(conn, input.product_id, &input.url)
             } else {
-                return Err(FieldError::from("You're not authorized to do this!\nThis product belongs to a private collection and you don't own it"));
+                Err(FieldError::from("You're not authorized to do this!\nThis product belongs to a private collection and you don't own it"))
             }
         } else {
-            return Err(FieldError::from("You're not logged in!"));
+            Err(FieldError::from("You're not logged in!"))
         }
     }
 

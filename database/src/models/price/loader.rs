@@ -29,7 +29,7 @@ impl PriceBatcher {
         let conn = self.pool.get().unwrap();
 
         ids.iter().for_each(|&id| {
-            hashmap.entry(id).or_insert_with(|| Vec::<Price>::new());
+            hashmap.entry(id).or_insert_with(Vec::new);
         });
 
         prices::table

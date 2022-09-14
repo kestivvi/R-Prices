@@ -13,11 +13,17 @@ pub struct PriceScraperConfig {
     pub fantoccini_selectors: HashMap<String, String>,
 }
 
-impl PriceScraperConfig {
-    /// Exits the program if could not load web_scraper_config.json or there are values not set
-    pub fn new() -> PriceScraperConfig {
+impl Default for PriceScraperConfig {
+    fn default() -> Self {
         Self::new_from_file("web_scraper_settings")
     }
+}
+
+impl PriceScraperConfig {
+    /// Exits the program if could not load web_scraper_config.json or there are values not set
+    // pub fn new() -> PriceScraperConfig {
+    //     Self::new_from_file("web_scraper_settings")
+    // }
 
     pub fn new_from_file(path: &str) -> PriceScraperConfig {
         let settings = Config::builder()
@@ -28,10 +34,7 @@ impl PriceScraperConfig {
         let settings = match settings {
             Ok(v) => v,
             Err(e) => {
-                panic!(
-                    "Could not load the config for some reason: {}",
-                    e.to_string()
-                );
+                panic!("Could not load the config for some reason: {:?}", e);
                 // process::exit(1);
             }
         };

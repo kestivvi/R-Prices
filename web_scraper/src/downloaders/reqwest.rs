@@ -52,7 +52,7 @@ impl Downloader for ReqwestDownloader {
 
         // Get url of the downloaded page
         let downloaded_url = url::Url::parse(
-            &response.url().to_string().trim_end_matches(|c| c == '/'),
+            response.url().to_string().trim_end_matches(|c| c == '/'),
         )
         .map_err(|error| {
             error_stack::report!(error)

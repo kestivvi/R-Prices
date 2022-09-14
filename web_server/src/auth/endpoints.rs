@@ -2,9 +2,7 @@ use actix_web::cookie::{Cookie, Expiration};
 use actix_web::error::ErrorUnauthorized;
 use actix_web::{web, HttpResponse};
 use actix_web::{HttpRequest, Responder};
-use database::models::user::{
-    NewEmail, NewName, PasswordChange, RegisterLoginUserInput,
-};
+use database::models::user::{NewEmail, NewName, PasswordChange, RegisterLoginUserInput};
 
 use database::db::PostgresPool;
 use serde_json::json;
@@ -32,24 +30,22 @@ async fn register(
     let user_with_the_same_email =
         database::models::user::queries::get_user_by_email(&conn, &new_user.email).ok();
 
-    if let Some(_) = user_with_the_same_email {
+    if user_with_the_same_email.is_some() {
         return Ok(HttpResponse::Conflict().body("User with that email already exists"));
     };
 
     let user_with_the_same_name =
         database::models::user::queries::get_user_by_name(&conn, &new_user.name).ok();
 
-    if let Some(_) = user_with_the_same_name {
+    if user_with_the_same_name.is_some() {
         return Ok(HttpResponse::Conflict().body("User with that name already exists"));
     };
 
-    let new_user =
-        database::models::user::mutations::register_user(&conn, new_user.into_inner());
+    let new_user = database::models::user::mutations::register_user(&conn, new_user.into_inner());
 
     match new_user {
         Ok(user) => {
-            let session_id =
-                database::models::session::mutations::insert(&conn, user.id).unwrap();
+            let session_id = database::models::session::mutations::insert(&conn, user.id).unwrap();
             let cookie = Cookie::build("session_id", session_id.to_string())
                 .http_only(true)
                 // TODO: Move duration to some config
@@ -61,9 +57,9 @@ async fn register(
                 .finish();
             Ok(HttpResponse::Created().cookie(cookie).await.unwrap())
         }
-        Err(_) => Err(actix_web::error::ErrorInternalServerError(format!(
-            "Cannot create user"
-        ))),
+        Err(_) => Err(actix_web::error::ErrorInternalServerError(
+            "Cannot create user",
+        )),
     }
 }
 
@@ -73,13 +69,11 @@ async fn login(
 ) -> actix_web::Result<impl Responder> {
     let conn = pool.get().unwrap();
 
-    let user =
-        database::models::user::queries::login_user(&conn, login_input.into_inner());
+    let user = database::models::user::queries::login_user(&conn, login_input.into_inner());
 
     match user {
         Ok(user) => {
-            let session_id =
-                database::models::session::mutations::insert(&conn, user.id).unwrap();
+            let session_id = database::models::session::mutations::insert(&conn, user.id).unwrap();
             let cookie = Cookie::build("session_id", session_id.to_string())
                 .http_only(true)
                 // TODO: Move duration to some config
@@ -110,14 +104,11 @@ async fn me(
     match session_id {
         Some(session_id) => {
             let conn = pool.get().unwrap();
-            let user_id =
-                match database::models::session::queries::get_user_id(&conn, session_id)
-                {
-                    Some(v) => v,
-                    None => return Err(ErrorUnauthorized("Your session expired")),
-                };
-            let user =
-                database::models::user::queries::get_user_by_id(&conn, user_id).unwrap();
+            let user_id = match database::models::session::queries::get_user_id(&conn, session_id) {
+                Some(v) => v,
+                None => return Err(ErrorUnauthorized("Your session expired")),
+            };
+            let user = database::models::user::queries::get_user_by_id(&conn, user_id).unwrap();
 
             // TODO: Prolong session cookie
             Ok(HttpResponse::Ok()
@@ -179,9 +170,7 @@ async fn logout(
 
             let conn = pool.get().unwrap();
 
-            database::models::session::mutations::remove_by_session_id(
-                &conn, session_id,
-            );
+            database::models::session::mutations::remove_by_session_id(&conn, session_id);
             HttpResponse::Ok().cookie(cookie).finish()
         }
         None => HttpResponse::Ok().finish(),
@@ -215,17 +204,14 @@ async fn change_name(
     let user_with_that_name =
         database::models::user::queries::get_user_by_name(&conn, &new_name_obj.new_name);
 
-    if let Ok(_) = user_with_that_name {
+    if user_with_that_name.is_ok() {
         return Err(ErrorUnauthorized(
             "This name is already in use by other user!",
         ));
     }
 
-    let res = database::models::user::mutations::change_name(
-        &conn,
-        user_id,
-        &new_name_obj.new_name,
-    );
+    let res =
+        database::models::user::mutations::change_name(&conn, user_id, &new_name_obj.new_name);
 
     match res {
         Ok(_) => Ok(HttpResponse::Ok().finish()),
@@ -258,22 +244,17 @@ async fn change_email(
         None => return Err(ErrorUnauthorized("Your session expired!")),
     };
 
-    let user_with_that_email = database::models::user::queries::get_user_by_email(
-        &conn,
-        &new_email_obj.new_email,
-    );
+    let user_with_that_email =
+        database::models::user::queries::get_user_by_email(&conn, &new_email_obj.new_email);
 
-    if let Ok(_) = user_with_that_email {
+    if user_with_that_email.is_ok() {
         return Err(ErrorUnauthorized(
             "This email is already in use by other user!",
         ));
     }
 
-    let res = database::models::user::mutations::change_email(
-        &conn,
-        user_id,
-        &new_email_obj.new_email,
-    );
+    let res =
+        database::models::user::mutations::change_email(&conn, user_id, &new_email_obj.new_email);
 
     match res {
         Ok(_) => Ok(HttpResponse::Ok().finish()),
@@ -306,12 +287,11 @@ async fn change_password(
         None => return Err(ErrorUnauthorized("Your session expired!")),
     };
 
-    let correct_password =
-        database::models::user::queries::is_that_user_have_that_passwd(
-            &conn,
-            user_id,
-            &password_change_obj.old_password,
-        );
+    let correct_password = database::models::user::queries::is_that_user_have_that_passwd(
+        &conn,
+        user_id,
+        &password_change_obj.old_password,
+    );
 
     if !correct_password {
         return Err(ErrorUnauthorized("Provided old password is incorect!"));
